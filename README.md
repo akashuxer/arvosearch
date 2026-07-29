@@ -30,6 +30,36 @@ The counter communicates the current search scope:
 
 Selection count is separate from search-result count. The counter uses tabular numerals to prevent layout movement and has an accessible label such as `12 matching results out of 92 total values`.
 
+## Query lifecycle and result states
+
+1. The field accepts typed text, pasted text, comma-separated values, or line-separated values according to the multi-value configuration.
+2. Leading and trailing whitespace is trimmed; empty entries and duplicate normalized entries are ignored.
+3. Local search evaluates immediately. Remote search waits for the configured debounce and minimum-character threshold.
+4. A newer query cancels or supersedes any older pending response. Stale results must never replace the current query.
+5. Valid results are ranked according to the selected match method. **All matches** ranks complete equality first, followed by starts with, contains, and ends with.
+6. **Clear** removes the query, results, inline counter, validation guidance, and remembered session query.
+7. Changing the match method or case-sensitivity setting re-evaluates the current committed query.
+
+| State | Result-region behavior | Counter |
+|---|---|---|
+| Empty | Show the unfiltered/default content defined by the consumer. | Hidden |
+| Below minimum characters | Show concise guidance; do not send a remote request. | Hidden |
+| Loading | Show result-list skeleton rows and preserve layout. | Hidden |
+| Results | Show matching values with responsible positive fragments highlighted. | `matching/total` |
+| No results | Show a clear no-results message and retain the query for editing. | Hidden |
+| Invalid/incomplete syntax | Show actionable inline guidance; do not run the invalid query. | Hidden |
+| Remote error | Show an error state with Retry when retry is supported. Preserve the query. | Hidden |
+
+### Keyboard and focus
+
+- The search input has one normal tab stop.
+- `Escape` clears the current query first. Host-container dismissal remains the responsibility of the container.
+- `Enter` commits the current entry when multi-value non-compact mode is active; otherwise it runs or confirms the current search.
+- `Arrow Up` and `Arrow Down` move through an open match-method menu or result list according to the active widget.
+- `Enter` or `Space` selects the focused menu option or result.
+- Focus remains visible and returns to the invoking match-method control after its menu closes.
+- Search updates and result counts are announced concisely; individual skeleton rows and visual highlights are not separately announced.
+
 ## Test-case actions
 
 The playground provides two test actions without making either action part of the component contract:
