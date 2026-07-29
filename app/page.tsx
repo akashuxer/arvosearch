@@ -28,6 +28,7 @@ const methods: { value: Method; label: string; group: string; hint: string }[] =
 ];
 
 const customers = [
+  "abc", "abc-01", "abcd", "Customer-abc", "Customer-abc-01", "abc, xyz",
   "05", "05-Customer-123", "05 Northwind", "Customer-05-East",
   "Customer-4051-India", "Customer-B05", "Northwind-05",
   "ACME", "acme", "Acme Corporation", "ACME-India", "Acme & Sons",
@@ -55,6 +56,15 @@ const testCases: { category: string; title: string; input: string; method: Metho
   { category: "Discovery & ranking", title: "Exact value within All matches", input: "Northwind", method: "all", expected: "Keeps the exact Northwind record first while still discovering longer related values." },
   { category: "Discovery & ranking", title: "Word inside a long name", input: "Enterprise", method: "all", expected: "Finds the word across names and highlights only the characters that matched." },
   { category: "Discovery & ranking", title: "Similar values, no correction", input: "Customer", method: "all", expected: "Returns Customer and Customers as distinct records without stemming or correction." },
+  { category: "Direct & quoted input", title: "Direct text uses All matches", input: "abc", method: "all", expected: "Treats abc as ordinary literal text and ranks the exact value before prefix and contains matches." },
+  { category: "Direct & quoted input", title: "Quoted phrase", input: "\"abc\"", method: "all", expected: "Treats the quotes as grouping syntax, removes them before matching, and applies the selected method to abc." },
+  { category: "Direct & quoted input", title: "Quoted comma stays in one value", input: "\"abc, xyz\"", method: "all", expected: "Treats abc, xyz as one uninterrupted value because the comma is inside quotes." },
+  { category: "Direct & quoted input", title: "Two quoted values", input: "\"abc\", \"xyz\"", method: "all", expected: "Treats abc and xyz as two values combined with OR because the separator is outside the quotes." },
+  { category: "Direct & quoted input", title: "Exact quoted comma", input: "=\"abc, xyz\"", method: "all", expected: "Forces complete-value equality for the single stored value abc, xyz." },
+  { category: "Direct & quoted input", title: "Unclosed quotation mark", input: "\"abc", method: "all", expected: "Does not run the search and asks the user to close the quotation mark." },
+  { category: "Direct & quoted input", title: "Empty quoted value", input: "\"\"", method: "all", expected: "Does not run the search and asks the user to enter a value between the quotation marks." },
+  { category: "Direct & quoted input", title: "Text after quoted value", input: "\"abc\"xyz", method: "all", expected: "Does not run the search and asks for a separator after the quoted value." },
+  { category: "Direct & quoted input", title: "Quoted wildcard is unsupported", input: ":\"abc*\"", method: "all", expected: "Does not mix wildcard grammar with quoted phrases and explains how to enter one unquoted wildcard pattern." },
 
   { category: "Exact lookup", title: "Exact customer code", input: "CUST-10001", method: "exact", expected: "Returns only the complete identifier, not EU-CUST-10001 or nearby codes." },
   { category: "Exact lookup", title: "Exact value", input: "ACME", method: "exact", expected: "Matches the complete stored value only." },
@@ -165,6 +175,37 @@ function parseEntry(raw: string) {
   return { value, forceExact };
 }
 
+function parseSearchValues(raw: string) {
+  const values: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (const character of raw) {
+    if (character === "\"") {
+      inQuotes = !inQuotes;
+      current += character;
+    } else if ((character === "," || character === "\n" || character === "\r") && !inQuotes) {
+      if (current.trim()) values.push(current.trim());
+      current = "";
+    } else {
+      current += character;
+    }
+  }
+
+  if (current.trim()) values.push(current.trim());
+  return { values, hasUnclosedQuote: inQuotes };
+}
+
+function getQuotedInputError(raw: string, values: string[]) {
+  if (parseSearchValues(raw).hasUnclosedQuote) return "Close the quotation mark to complete this phrase.";
+  if (values.some((entry) => /^=?\s*""\s*$/.test(entry))) return "Enter a value between the quotation marks.";
+  if (values.some((entry) => /^=?\s*"[^"]*"\S+/.test(entry))) return "Add a comma after the quoted value or remove the quotation marks.";
+  if (values.some((entry) => entry.trimStart().startsWith(":\"") && /[*?]/.test(entry))) {
+    return "Wildcard search does not support quoted phrases. Remove the quotation marks and search one wildcard pattern.";
+  }
+  return "";
+}
+
 function isNegativeMethod(method: Method) {
   return method === "notExact" || method === "notStarts" || method === "notEnds" || method === "notContains";
 }
@@ -255,7 +296,7 @@ export default function Home() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const current = methods.find((item) => item.value === method)!;
   const methodTooltip = `Match method: ${current.label}`;
-  const multipleValues = query.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+  const multipleValues = parseSearchValues(query).values;
   const hasWildcard = multipleValues.some((entry) => {
     const value = parseEntry(entry).value;
     return value.startsWith(":") && /[*?]/.test(value.slice(1));
@@ -264,7 +305,8 @@ export default function Home() {
   const searchableValues = multipleValues.filter((item) => parseEntry(item).value.replace(/[*?]/g, "").length >= minSearchCharacters);
   const needsMoreCharacters = query.trim().length > 0 && searchableValues.length === 0;
   const supportsMultiple = hasMultiValue;
-  const inputError = wildcardInputError || (multipleValues.length > 1 && !supportsMultiple
+  const quotedInputError = getQuotedInputError(query, multipleValues);
+  const inputError = wildcardInputError || quotedInputError || (multipleValues.length > 1 && !supportsMultiple
     ? "Multi-value input is disabled for this search."
     : hasIncompleteWildcard
       ? "Add a wildcard pattern after : using * or ?."
@@ -291,7 +333,7 @@ export default function Home() {
   const results = useMemo(() => {
     if (!query.trim()) return customers;
     if (!executedQuery.trim() || inputError || needsMoreCharacters) return [];
-    const executedValues = executedQuery.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+    const executedValues = parseSearchValues(executedQuery).values;
     const entries = (supportsMultiple ? executedValues : [executedQuery.trim()])
       .filter((item) => parseEntry(item).value.replace(/[*?]/g, "").length >= minSearchCharacters);
     const negative = isNegativeMethod(method);
@@ -350,8 +392,9 @@ export default function Home() {
 
   function pasteValues(event: ClipboardEvent<HTMLTextAreaElement>) {
     const pasted = event.clipboardData.getData("text");
-    const values = pasted.split(/[,\r\n]+/).map((value) => value.trim()).filter(Boolean);
-    const containsSeparators = /[,\r\n]/.test(pasted);
+    const parsedPaste = parseSearchValues(pasted);
+    const values = parsedPaste.values;
+    const containsSeparators = values.length > 1;
     const combinedValue = `${query}${pasted}`.trimStart();
     const activatesWildcard = combinedValue.startsWith(":") && /[*?]/.test(combinedValue.slice(1));
     if (activatesWildcard && (containsSeparators || values.length > 1)) {
@@ -399,10 +442,7 @@ export default function Home() {
   function tryTestCase(test: (typeof testCases)[number]) {
     setMethod(test.method);
     setIsCaseSensitive(Boolean(test.caseSensitive));
-    const normalized = test.input
-      .split(/[,\r\n]+/)
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const normalized = parseSearchValues(test.input).values;
     const isMultiValueWildcard = normalized.length > 1 && normalized.some((value) => value.startsWith(":") && /[*?]/.test(value.slice(1)));
     setQuery(isMultiValueWildcard
       ? normalized[0] ?? ""
