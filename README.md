@@ -79,6 +79,44 @@ Copy must never prefill the field. This keeps clipboard testing realistic and al
 | Exact phrase | Words must remain together and in the entered order. This does not necessarily mean that the entire stored value is equal. | `"Customer A"` can be a phrase inside `Preferred Customer A East`. |
 | Exact token | Matches a complete indexed word or token rather than a substring inside a larger token. | `Customer` does not match the token `Customers` or `Customer123`. |
 
+## Direct and quoted input
+
+Ordinary text is a valid literal search. Double quotes group one phrase; they do not independently change the selected match method or force complete-value equality.
+
+| Input | Interpretation |
+|---|---|
+| `abc` | One ordinary literal value. In **All matches**, exact `abc` ranks before values that start with, contain, or end with `abc`. |
+| `"abc"` | One quoted phrase, `abc`. The quotes are removed before matching and the selected method still applies. |
+| `abc, xyz` | Two values, combined with OR for positive methods or AND NOT for negative methods. |
+| `"abc, xyz"` | One value containing a literal comma: `abc, xyz`. |
+| `"abc", "xyz"` | Two quoted values: `abc` and `xyz`. |
+| `="abc"` | Exact complete-value match for `abc` while **All matches** remains selected. |
+| `="abc, xyz"` | Exact complete-value match for the one stored value `abc, xyz`. |
+
+Commas and line breaks separate values only when they occur outside double quotes. Quotation marks preserve spaces, punctuation, and commas inside one value; they are parsing syntax and are not stored as part of the query.
+
+### Quoted-input validation
+
+Invalid quoted input does not run a search or silently reinterpret the query.
+
+| Input | Inline guidance |
+|---|---|
+| `"abc` or `abc"` | `Close the quotation mark to complete this phrase.` |
+| `""` | `Enter a value between the quotation marks.` |
+| `"abc"xyz` | `Add a comma after the quoted value or remove the quotation marks.` |
+| `:"abc*"` | `Wildcard search does not support quoted phrases. Remove the quotation marks and search one wildcard pattern.` |
+
+A trailing separator such as `"abc",` keeps the valid `abc` value and ignores the empty trailing entry.
+
+### Method behavior for `"abc"`
+
+- **All matches:** searches broadly for `abc` and ranks exact, prefix, contains, and suffix matches.
+- **Exact matches:** matches only the complete stored value `abc`.
+- **Starts with / Ends with / Contains:** applies the selected positional rule to `abc`.
+- **Negative methods:** applies the corresponding exclusion rule to `abc`.
+
+Quotes group the value. `=` controls complete-value equality. The selected match method controls how the grouped value is matched.
+
 ## Wildcard trigger
 
 Wildcard interpretation begins only when an entry starts with `:`. This keeps
