@@ -33,6 +33,16 @@
   "exclude": [
     "node_modules",
     "db",
-    "examples"
+    "worker",
+    "build",
+    "scripts",
+    "tests",
+    "examples",
+    "vite.config.ts",
+    ".wrangler",
+    ".sites-runtime",
+    "dist",
+    "outputs",
+    "work"
   ]
 }
