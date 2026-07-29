@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ClipboardEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Method =
   | "all"
@@ -95,6 +95,9 @@ const testCases: { category: string; title: string; input: string; method: Metho
   { category: "Wildcard shortcuts", title: "Exactly one unknown character", input: ":Customer-A0?", method: "all", expected: "The leading : activates wildcard matching; ? matches exactly one character and returns A01 through A09." },
   { category: "Wildcard shortcuts", title: "Two unknown characters", input: ":CUST-100??", method: "all", expected: "The leading : activates wildcard matching; two ? characters match exactly two trailing characters." },
   { category: "Wildcard shortcuts", title: "Asterisk without trigger", input: "SKU*05", method: "all", expected: "Without a leading :, * remains literal text and finds the stored SKU*05 value." },
+  { category: "Wildcard limitations", title: "Multiple wildcard values are blocked", input: ":*Customer-A01*, :*Customer-A02*", method: "all", expected: "Wildcard search supports only one value. The comma and second pattern are rejected with an inline explanation." },
+  { category: "Wildcard limitations", title: "Wildcard and plain value are blocked", input: ":*Customer-A01*, Customer-A02", method: "all", expected: "Wildcard and non-wildcard values cannot be combined. The search keeps the single wildcard pattern and explains the limitation." },
+  { category: "Wildcard limitations", title: "Line break after wildcard is blocked", input: ":*Customer-A01*\nCustomer-A02", method: "all", expected: "Enter and Shift+Enter cannot create another value while wildcard mode is active." },
 
   { category: "Multiple values", title: "Pasted blank rows", input: "Customer-A01\n\nCustomer-A02", method: "exact", expected: "Ignores the empty line, detects exactly 2 values, and highlights both matches." },
   { category: "Multiple values", title: "Whitespace-only pasted rows", input: "Customer-A01\n   \n\nCustomer-A03", method: "exact", expected: "Discards whitespace-only rows instead of creating empty search values." },
@@ -248,6 +251,7 @@ export default function Home() {
   const [isSearching, setIsSearching] = useState(false);
   const [copiedTest, setCopiedTest] = useState("");
   const [inputFocused, setInputFocused] = useState(false);
+  const [wildcardInputError, setWildcardInputError] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const current = methods.find((item) => item.value === method)!;
   const methodTooltip = `Match method: ${current.label}`;
@@ -260,13 +264,13 @@ export default function Home() {
   const searchableValues = multipleValues.filter((item) => parseEntry(item).value.replace(/[*?]/g, "").length >= minSearchCharacters);
   const needsMoreCharacters = query.trim().length > 0 && searchableValues.length === 0;
   const supportsMultiple = hasMultiValue;
-  const inputError = multipleValues.length > 1 && !supportsMultiple
+  const inputError = wildcardInputError || (multipleValues.length > 1 && !supportsMultiple
     ? "Multi-value input is disabled for this search."
     : hasIncompleteWildcard
       ? "Add a wildcard pattern after : using * or ?."
     : hasWildcard && method !== "all"
       ? "Wildcards are available only with All matches."
-      : "";
+      : "");
 
   useEffect(() => {
     if (!query.trim() || inputError || needsMoreCharacters) {
@@ -329,6 +333,13 @@ export default function Home() {
     : results;
 
   function updateQuery(nextValue: string) {
+    const activatesWildcard = nextValue.trimStart().startsWith(":") && /[*?]/.test(nextValue.trimStart().slice(1));
+    if (activatesWildcard && /[,\n\r]/.test(nextValue)) {
+      setWildcardInputError("Wildcard search supports one value at a time. Remove the comma or line break, then search one wildcard pattern.");
+      return;
+    }
+
+    setWildcardInputError("");
     if (!hasMultiValue || inputLayout === "compact") {
       setQuery(nextValue.replace(/\n+/g, ", "));
       return;
@@ -341,9 +352,17 @@ export default function Home() {
     const pasted = event.clipboardData.getData("text");
     const values = pasted.split(/[,\r\n]+/).map((value) => value.trim()).filter(Boolean);
     const containsSeparators = /[,\r\n]/.test(pasted);
+    const combinedValue = `${query}${pasted}`.trimStart();
+    const activatesWildcard = combinedValue.startsWith(":") && /[*?]/.test(combinedValue.slice(1));
+    if (activatesWildcard && (containsSeparators || values.length > 1)) {
+      event.preventDefault();
+      setWildcardInputError("Wildcard search supports one value at a time. Remove the comma or line break, then search one wildcard pattern.");
+      return;
+    }
     if (!containsSeparators || !hasMultiValue) return;
 
     event.preventDefault();
+    setWildcardInputError("");
     const input = inputRef.current;
     const selectionStart = input?.selectionStart ?? query.length;
     const selectionEnd = input?.selectionEnd ?? selectionStart;
@@ -367,6 +386,16 @@ export default function Home() {
     });
   }
 
+  function handleSearchKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter") return;
+    const activeValue = query.trimStart();
+    const isWildcardActive = activeValue.startsWith(":") && /[*?]/.test(activeValue.slice(1));
+    if (!isWildcardActive) return;
+
+    event.preventDefault();
+    setWildcardInputError("Wildcard search supports one value at a time. Remove the comma or line break, then search one wildcard pattern.");
+  }
+
   function tryTestCase(test: (typeof testCases)[number]) {
     setMethod(test.method);
     setIsCaseSensitive(Boolean(test.caseSensitive));
@@ -374,9 +403,15 @@ export default function Home() {
       .split(/[,\r\n]+/)
       .map((value) => value.trim())
       .filter(Boolean);
-    setQuery(hasMultiValue
-      ? normalized.join(inputLayout === "multiline" ? "\n" : ", ")
-      : normalized[0] ?? "");
+    const isMultiValueWildcard = normalized.length > 1 && normalized.some((value) => value.startsWith(":") && /[*?]/.test(value.slice(1)));
+    setQuery(isMultiValueWildcard
+      ? normalized[0] ?? ""
+      : hasMultiValue
+        ? normalized.join(inputLayout === "multiline" ? "\n" : ", ")
+        : normalized[0] ?? "");
+    setWildcardInputError(isMultiValueWildcard
+      ? "Wildcard search supports one value at a time. Remove the comma or line break, then search one wildcard pattern."
+      : "");
     setMenuOpen(false);
     setPanelOpen(true);
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -593,13 +628,14 @@ export default function Home() {
                 value={visibleInputValue}
                 onChange={(e) => updateQuery(e.target.value)}
                 onPaste={pasteValues}
+                onKeyDown={handleSearchKeyDown}
                 onFocus={() => setInputFocused(true)}
                 onBlur={() => setInputFocused(false)}
                 placeholder={method === "all" ? "Search or enter values" : `Search with ${current.label.toLowerCase()}`}
                 aria-label={`Search customers using ${current.label}`}
                 aria-describedby={inputError ? "search-error" : undefined}
               />
-              {query && <button aria-label="Clear search" onClick={() => setQuery("")}>×</button>}
+              {query && <button aria-label="Clear search" onClick={() => { setQuery(""); setWildcardInputError(""); }}>×</button>}
               {query.trim() && results.length > 0 && !isSearching && !needsMoreCharacters && !inputError && <span
                   className="selection-counter"
                   aria-label={`${results.length} matching results out of ${customers.length} total values`}
