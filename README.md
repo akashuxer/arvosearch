@@ -1,10 +1,23 @@
 # Arvo Advance Search Playground
 
-An interactive reference implementation for Arvo Advance Search. The playground demonstrates strict discovery, exact-value matching, positional matching, wildcards, multi-value input, result highlighting, and high-cardinality search configuration.
+An interactive reference implementation for Arvo Advance Search. The playground demonstrates strict discovery, exact-value matching, positional matching, explicitly triggered wildcards, multi-value input, result highlighting, and high-cardinality search configuration.
+
+## Panel behaviour
+
+The Customer member panel is a **modeless side panel**:
+
+- It stays fixed to the right side of the viewport.
+- It does not display a mask, backdrop, or page-dimming overlay.
+- The playground content on the left remains visible and interactive while the panel is open.
+- Users can change configurator settings, copy test values, and use test-case actions without closing the panel.
+- The panel does not trap focus or expose `aria-modal="true"`.
+- It closes only through an explicit panel action, such as Close or Apply selection; clicking the surrounding page does not dismiss it.
+
+Use this model when users must compare, configure, or act on the underlying page while searching and selecting members. A modal panel should be reserved for workflows that must temporarily block page interaction.
 
 ## Search toolbar
 
-When these controls are enabled, the search field uses this order:
+The member-panel search toolbar uses this fixed order:
 
 ```text
 Search icon → Search value → Clear → Matching/total counter → Match method
@@ -28,14 +41,14 @@ The counter communicates the current search scope:
 - Empty search: counter hidden.
 - No results, loading, minimum-character guidance, or invalid input: counter hidden.
 
-Selection state, when supported by the consuming experience, is separate from this search-results counter. The counter uses tabular numerals to prevent layout movement and has an accessible label such as `12 matching results out of 92 total values`.
+Selection remains communicated separately in the panel footer, for example `2 selected`. The counter uses tabular numerals to prevent layout movement and has an accessible label such as `12 matching results out of 92 total values`.
 
 ## Test-case actions
 
 Each test case provides two distinct actions:
 
-- **Copy:** Copies the original sample value, applies the test case’s required match method and case-sensitivity setting, focuses the search field, and leaves the field empty so the user can paste manually.
-- **Try in search:** Applies the required configuration and loads the normalized sample directly into the focused search field. Empty and whitespace-only pasted rows are removed.
+- **Copy:** Copies the original sample value, applies the test case’s required match method and case-sensitivity setting, opens the Customer panel, focuses the search field, and leaves the field empty so the user can paste manually.
+- **Try in panel:** Applies the required configuration and loads the normalized sample directly into the focused search field. Empty and whitespace-only pasted rows are removed.
 
 Copy must never prefill the search field. This keeps clipboard testing realistic and ensures the user can verify paste parsing, blank-row cleanup, and multiline behavior.
 
@@ -48,6 +61,27 @@ Copy must never prefill the search field. This keeps clipboard testing realistic
 | Exact matches | Complete stored-value equality after configured normalization. It does not perform prefix, contains, suffix, wildcard, stemming, synonym, or typo matching. | `Customer-A01` matches only the complete `Customer-A01` value. |
 | Exact phrase | Words must remain together and in the entered order. This does not necessarily mean that the entire stored value is equal. | `"Customer A"` can be a phrase inside `Preferred Customer A East`. |
 | Exact token | Matches a complete indexed word or token rather than a substring inside a larger token. | `Customer` does not match the token `Customers` or `Customer123`. |
+
+## Wildcard trigger
+
+Wildcard interpretation begins only when an entry starts with `:`. This keeps
+ordinary enterprise values containing `*` or `?` searchable as literal text.
+
+| Input | Interpretation |
+|---|---|
+| `:a*` | Starts with `a` |
+| `:*a*` | Contains `a` |
+| `:*a` | Ends with `a` |
+| `:a?` | `a` followed by exactly one character |
+| `a*` | Literal text `a*`; wildcard matching is not activated |
+| `SKU*05` | Literal value; may match the stored value `SKU*05` |
+
+- `*` matches zero or more characters.
+- `?` matches exactly one character.
+- The trigger applies independently to each entry in a multi-value search.
+- Wildcard shortcuts are supported only with **All matches**.
+- A standalone `:` is incomplete and should prompt the user to add `*` or `?`.
+- The `:` is a command trigger and is not included in matching or highlighting.
 
 Arvo’s **Exact matches** menu option means **exact value**, not merely exact phrase or exact token.
 
@@ -66,6 +100,54 @@ Arvo’s **Exact matches** menu option means **exact value**, not merely exact p
 | Does not contain | Negative | Exclude an infix | AND NOT: contain none of the entered values |
 
 All positive methods highlight the responsible typed or pasted value. Negative methods do not highlight excluded text because every returned record is, by definition, a non-match.
+
+### Multi-value examples by method
+
+Every match method supports multiple values when **Multi-value input** is
+enabled. Commas and line breaks are equivalent separators.
+
+| Method | Example input | Logic | Expected behaviour |
+|---|---|---|---|
+| All matches | `Northwind, 4051` | `Northwind OR 4051` | Broadly discovers values matching either entry and ranks exact, prefix, contains, and suffix matches. |
+| Exact matches | `ACME, Northwind, Customer-A01` | `= ACME OR = Northwind OR = Customer-A01` | Returns any of the three complete stored values only. |
+| Does not equal | `ACME, Northwind, Customer-A01` | `!= ACME AND != Northwind AND != Customer-A01` | Excludes those complete values. `ACME Retail` remains because it is not equal to `ACME`. |
+| Starts with | `Customer-A, Northwind` | `starts Customer-A OR starts Northwind` | Returns values beginning with either prefix. |
+| Does not start with | `Customer-A, Northwind` | `NOT starts Customer-A AND NOT starts Northwind` | Excludes values beginning with either prefix. |
+| Ends with | `Customer, 05` | `ends Customer OR ends 05` | Returns values ending with either suffix. |
+| Does not end with | `Customer, 05` | `NOT ends Customer AND NOT ends 05` | Excludes values ending with either suffix. |
+| Contains | `Retail, Microsoft` | `contains Retail OR contains Microsoft` | Returns values containing either fragment anywhere. |
+| Does not contain | `Retail, Customer` | `NOT contains Retail AND NOT contains Customer` | Returns only values containing neither fragment. |
+
+#### Important negative-method rule
+
+Negative values must use **AND NOT**, not OR. For example:
+
+```text
+Does not contain: Retail, Customer
+```
+
+means:
+
+```text
+does not contain Retail AND does not contain Customer
+```
+
+If OR were used, a value such as `India Retail Customer` could incorrectly pass
+one side of the condition even though it contains excluded text.
+
+#### Inline exact and broad matching together
+
+Within **All matches**, individual entries may opt into exact equality:
+
+```text
+="Customer A 01", =Northwind, Retail
+```
+
+This means:
+
+- exact value `Customer A 01`, **OR**
+- exact value `Northwind`, **OR**
+- any All matches result for `Retail`.
 
 ### Inline exact-value syntax in All matches
 
@@ -89,13 +171,16 @@ Default Exact matches behavior:
 - Preserve meaningful internal spaces, punctuation, hyphens, and underscores.
 - No typo tolerance. A misspelling returns no result.
 - No stemming, synonyms, automatic pluralization, or silent query relaxation.
-- No wildcard interpretation in Exact matches; `*` and `?` are literal characters.
+- No wildcard interpretation without the `:` trigger.
+- No wildcard interpretation in Exact matches; `*` and `?` remain literal characters.
 
 For identifiers such as SKUs and account codes, case sensitivity can be enabled at the attribute configuration level.
 
 ## Why Arvo does not use a Partial search toggle
 
 The legacy o9 Classic filter shows **Partial Search** only after users paste multiple values. That makes a fundamental matching rule appear conditionally and ties it to the input method rather than the user’s intent.
+
+For a detailed side-by-side comparison, see [Classic Partial Search vs Arvo Advanced Search](https://docs.google.com/document/d/1bORE_WNr4x_VlUQquEISKv2xlfUw8aS6MtUnGKJs6i0/edit?usp=sharing).
 
 Arvo keeps matching explicit and consistent:
 
@@ -109,7 +194,7 @@ This avoids a hidden mode change, makes typed and pasted searches behave the sam
 
 ## Playground configuration
 
-The developer-facing configurator is part of the playground only. These controls configure the search component and are not shown in the end-user search UI:
+The developer-facing configurator is intentionally outside the end-user panel:
 
 - Multi-value input: On or Off
 - Multi-value mode: Compact or Non-compact
@@ -125,7 +210,7 @@ The developer-facing configurator is part of the playground only. These controls
 When the dataset mode is **Remote**, the results area displays a skeleton loader
 while the debounced request is in progress:
 
-- The search input and entered value remain stable.
+- The search input, entered value, panel header, and footer remain stable.
 - Skeleton rows replace only the bottom result-list content.
 - The inline matching/total counter stays hidden while loading.
 - Previous remote responses cannot replace a newer query result.
@@ -137,14 +222,14 @@ Local mode does not use the results skeleton during normal synchronous search.
 
 ### Session persistence
 
-When **Search persists** is On, the search restores the last uncleared query,
-selected match method, and corresponding results when the same search experience
-is reopened during the current page session. It does not write the query to
-durable storage.
+When **Search persists** is On, closing and reopening the member panel restores
+the last query, selected match method, and corresponding results, provided the
+user did not clear the query. The setting applies only to the current page
+session and does not write the query to durable storage.
 
-When Search persists is Off, a reopened search starts with an empty query. The
-Clear action always removes the current query immediately, regardless of the
-persistence setting.
+When Search persists is Off, closing the panel clears the query and reopening
+starts with an empty search field. The Clear action always removes the current
+query immediately, regardless of the persistence setting.
 
 ## Multi-value behaviour
 
@@ -160,10 +245,11 @@ persistence setting.
 ## Accessibility
 
 - The tune control is labelled dynamically, such as `Match method: All matches`.
-- Clear and other search controls have explicit accessible names.
+- Clear and close controls have explicit accessible names.
 - Results use listbox/option semantics with `aria-selected`.
 - Match highlighting does not fragment the spoken result value.
 - Focus indicators do not rely on color alone.
+- The modeless panel uses a labelled complementary landmark and does not trap focus, allowing a logical focus path between the panel and the playground.
 - Reduced-motion preferences are respected.
 
 ## Run locally

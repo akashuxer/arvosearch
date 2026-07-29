@@ -78,11 +78,23 @@ const testCases: { category: string; title: string; input: string; method: Metho
   { category: "Negative matching", title: "Multiple excluded exact values", input: "ACME, Northwind, Customer-A01", method: "notExact", expected: "Uses AND NOT: a result remains only when it equals none of the entered values." },
   { category: "Negative matching", title: "Multiple excluded fragments", input: "Retail, Customer", method: "notContains", expected: "Uses AND NOT: excludes values containing either fragment." },
 
-  { category: "Wildcard shortcuts", title: "Wildcard prefix", input: "Customer-A0*", method: "all", expected: "Uses * to match any remaining characters after Customer-A0." },
-  { category: "Wildcard shortcuts", title: "Wildcard contains", input: "*05*", method: "all", expected: "Uses leading and trailing * to find 05 anywhere in a value." },
-  { category: "Wildcard shortcuts", title: "Wildcard suffix", input: "*Customer", method: "all", expected: "Uses a leading * to find values ending with Customer." },
-  { category: "Wildcard shortcuts", title: "Exactly one unknown character", input: "Customer-A0?", method: "all", expected: "Uses ? to match exactly one character and returns A01 through A09." },
-  { category: "Wildcard shortcuts", title: "Two unknown characters", input: "CUST-100??", method: "all", expected: "Uses two ? characters to match exactly two trailing characters." },
+  { category: "Multi-value methods", title: "All matches with multiple values", input: "Northwind, 4051", method: "all", expected: "Uses OR: returns values broadly matching Northwind or 4051, with exact and partial results ranked per input." },
+  { category: "Multi-value methods", title: "Exact matches with multiple values", input: "ACME, Northwind, Customer-A01", method: "exact", expected: "Uses OR: returns a value when it completely equals any entered value." },
+  { category: "Multi-value methods", title: "Does not equal multiple values", input: "ACME, Northwind, Customer-A01", method: "notExact", expected: "Uses AND NOT: excludes all three complete values. Similar or longer values remain because they are not equal." },
+  { category: "Multi-value methods", title: "Starts with multiple values", input: "Customer-A, Northwind", method: "starts", expected: "Uses OR: returns values starting with Customer-A or Northwind." },
+  { category: "Multi-value methods", title: "Does not start with multiple values", input: "Customer-A, Northwind", method: "notStarts", expected: "Uses AND NOT: excludes values starting with either Customer-A or Northwind." },
+  { category: "Multi-value methods", title: "Ends with multiple values", input: "Customer, 05", method: "ends", expected: "Uses OR: returns values ending with Customer or 05." },
+  { category: "Multi-value methods", title: "Does not end with multiple values", input: "Customer, 05", method: "notEnds", expected: "Uses AND NOT: excludes values ending with either Customer or 05." },
+  { category: "Multi-value methods", title: "Contains multiple values", input: "Retail, Microsoft", method: "contains", expected: "Uses OR: returns a value when it contains Retail or Microsoft anywhere in the stored text." },
+  { category: "Multi-value methods", title: "Does not contain multiple values", input: "Retail, Customer", method: "notContains", expected: "Uses AND NOT: returns only values containing neither Retail nor Customer." },
+  { category: "Multi-value methods", title: "Mixed inline exact values in All matches", input: "=\"Customer A 01\", =Northwind, Retail", method: "all", expected: "Uses OR: the first two entries require complete equality, while Retail keeps broad All matches behavior." },
+
+  { category: "Wildcard shortcuts", title: "Triggered wildcard prefix", input: ":Customer-A0*", method: "all", expected: "The leading : activates wildcard matching; * matches any remaining characters after Customer-A0." },
+  { category: "Wildcard shortcuts", title: "Triggered wildcard contains", input: ":*05*", method: "all", expected: "The leading : activates wildcard matching; the surrounding * characters find 05 anywhere in a value." },
+  { category: "Wildcard shortcuts", title: "Triggered wildcard suffix", input: ":*Customer", method: "all", expected: "The leading : activates wildcard matching; the leading * finds values ending with Customer." },
+  { category: "Wildcard shortcuts", title: "Exactly one unknown character", input: ":Customer-A0?", method: "all", expected: "The leading : activates wildcard matching; ? matches exactly one character and returns A01 through A09." },
+  { category: "Wildcard shortcuts", title: "Two unknown characters", input: ":CUST-100??", method: "all", expected: "The leading : activates wildcard matching; two ? characters match exactly two trailing characters." },
+  { category: "Wildcard shortcuts", title: "Asterisk without trigger", input: "SKU*05", method: "all", expected: "Without a leading :, * remains literal text and finds the stored SKU*05 value." },
 
   { category: "Multiple values", title: "Pasted blank rows", input: "Customer-A01\n\nCustomer-A02", method: "exact", expected: "Ignores the empty line, detects exactly 2 values, and highlights both matches." },
   { category: "Multiple values", title: "Whitespace-only pasted rows", input: "Customer-A01\n   \n\nCustomer-A03", method: "exact", expected: "Discards whitespace-only rows instead of creating empty search values." },
@@ -156,11 +168,13 @@ function isNegativeMethod(method: Method) {
 
 function matchesCondition(value: string, rawEntry: string, method: Method, isCaseSensitive: boolean) {
   const parsed = parseEntry(rawEntry);
+  const isWildcard = method === "all" && parsed.value.startsWith(":") && /[*?]/.test(parsed.value.slice(1));
+  const searchValue = isWildcard ? parsed.value.slice(1) : parsed.value;
   const v = comparable(value, isCaseSensitive);
-  const q = comparable(parsed.value, isCaseSensitive);
+  const q = comparable(searchValue, isCaseSensitive);
   if (!q) return false;
   if (method === "all" && parsed.forceExact) return v === q;
-  if (method === "all" && /[*?]/.test(parsed.value)) return wildcardMatch(value, parsed.value, isCaseSensitive);
+  if (isWildcard) return wildcardMatch(value, searchValue, isCaseSensitive);
   if (method === "exact" || method === "notExact") return v === q;
   if (method === "starts" || method === "notStarts") return v.startsWith(q);
   if (method === "ends" || method === "notEnds") return v.endsWith(q);
@@ -183,10 +197,11 @@ function wildcardMatch(value: string, pattern: string, isCaseSensitive: boolean)
 }
 
 function getWildcardMeaning(query: string) {
-  if (!/[*?]/.test(query)) return "";
-  if (query.startsWith("*") && query.endsWith("*") && query.length > 2) return `Contains “${query.slice(1, -1)}”`;
-  if (query.endsWith("*") && !query.startsWith("*")) return `Starts with “${query.slice(0, -1)}”`;
-  if (query.startsWith("*") && !query.endsWith("*")) return `Ends with “${query.slice(1)}”`;
+  const pattern = query.startsWith(":") ? query.slice(1) : query;
+  if (!/[*?]/.test(pattern)) return "";
+  if (pattern.startsWith("*") && pattern.endsWith("*") && pattern.length > 2) return `Contains “${pattern.slice(1, -1)}”`;
+  if (pattern.endsWith("*") && !pattern.startsWith("*")) return `Starts with “${pattern.slice(0, -1)}”`;
+  if (pattern.startsWith("*") && !pattern.endsWith("*")) return `Ends with “${pattern.slice(1)}”`;
   return "Wildcard pattern";
 }
 
@@ -203,7 +218,7 @@ function normalizeMultilineInput(value: string, keepTrailingRow = false) {
 
 function Highlight({ value, queries, isCaseSensitive }: { value: string; queries: string[]; isCaseSensitive: boolean }) {
   const clean = queries
-    .map((query) => query.replace(/[*?]/g, "").trim())
+    .map((query) => query.replace(/^:/, "").replace(/[*?]/g, "").trim())
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   const match = clean
@@ -236,13 +251,19 @@ export default function Home() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const current = methods.find((item) => item.value === method)!;
   const methodTooltip = `Match method: ${current.label}`;
-  const hasWildcard = /[*?]/.test(query);
   const multipleValues = query.split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+  const hasWildcard = multipleValues.some((entry) => {
+    const value = parseEntry(entry).value;
+    return value.startsWith(":") && /[*?]/.test(value.slice(1));
+  });
+  const hasIncompleteWildcard = multipleValues.some((entry) => parseEntry(entry).value === ":");
   const searchableValues = multipleValues.filter((item) => parseEntry(item).value.replace(/[*?]/g, "").length >= minSearchCharacters);
   const needsMoreCharacters = query.trim().length > 0 && searchableValues.length === 0;
   const supportsMultiple = hasMultiValue;
   const inputError = multipleValues.length > 1 && !supportsMultiple
     ? "Multi-value input is disabled for this search."
+    : hasIncompleteWildcard
+      ? "Add a wildcard pattern after : using * or ?."
     : hasWildcard && method !== "all"
       ? "Wildcards are available only with All matches."
       : "";
@@ -609,7 +630,7 @@ export default function Home() {
             {inputError ? <div className="input-message error" id="search-error">{inputError}</div> :
               query && hasWildcard && method === "all" ? <div className="input-message"><span className="spark">✦</span> Interpreted as: {getWildcardMeaning(query)}</div> :
               query && multipleValues.length > 1 ? <div className="input-message">{multipleValues.length} values detected · {isNegativeMethod(method) ? "All exclusions apply" : "Matches any value"}</div> :
-              <div className="input-message muted">{method === "all" ? "No typo tolerance · Use =value for inline exact · Supports * and ?" : isNegativeMethod(method) ? "Negative match · No typo tolerance · Supports multiple values" : "No typo tolerance · Supports multiple values"}</div>}
+              <div className="input-message muted">{method === "all" ? "No typo tolerance · Use =value for inline exact · Type : to use * or ? wildcards" : isNegativeMethod(method) ? "Negative match · No typo tolerance · Supports multiple values" : "No typo tolerance · Supports multiple values"}</div>}
           </div>
 
           <div className="result-meta">
