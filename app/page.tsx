@@ -468,6 +468,15 @@ export default function Home() {
               {method !== "all" && <span className="method-dot" />}
             </button>
           </div>
+          <nav className="search-resources" aria-label="Advance Search resources">
+            <a href="https://github.com/akashuxer/arvosearch/blob/main/README.md" target="_blank" rel="noreferrer">
+              ReadMe <span aria-hidden="true">↗</span>
+            </a>
+            <span aria-hidden="true">•</span>
+            <a href="https://docs.google.com/document/d/1bORE_WNr4x_VlUQquEISKv2xlfUw8aS6MtUnGKJs6i0/edit?usp=sharing" target="_blank" rel="noreferrer">
+              Classic Partial Search vs Arvo Advanced Search <span aria-hidden="true">↗</span>
+            </a>
+          </nav>
           <div className="stage-note">Select the search field to open the Customer member panel</div>
         </div>
       </section>
