@@ -2,22 +2,9 @@
 
 An interactive reference implementation for Arvo Advance Search. The playground demonstrates strict discovery, exact-value matching, positional matching, explicitly triggered wildcards, multi-value input, result highlighting, and high-cardinality search configuration.
 
-## Panel behaviour
-
-The Customer member panel is a **modeless side panel**:
-
-- It stays fixed to the right side of the viewport.
-- It does not display a mask, backdrop, or page-dimming overlay.
-- The playground content on the left remains visible and interactive while the panel is open.
-- Users can change configurator settings, copy test values, and use test-case actions without closing the panel.
-- The panel does not trap focus or expose `aria-modal="true"`.
-- It closes only through an explicit panel action, such as Close or Apply selection; clicking the surrounding page does not dismiss it.
-
-Use this model when users must compare, configure, or act on the underlying page while searching and selecting members. A modal panel should be reserved for workflows that must temporarily block page interaction.
-
 ## Search toolbar
 
-The member-panel search toolbar uses this fixed order:
+The search toolbar uses this fixed order:
 
 ```text
 Search icon → Search value → Clear → Matching/total counter → Match method
@@ -41,16 +28,16 @@ The counter communicates the current search scope:
 - Empty search: counter hidden.
 - No results, loading, minimum-character guidance, or invalid input: counter hidden.
 
-Selection remains communicated separately in the panel footer, for example `2 selected`. The counter uses tabular numerals to prevent layout movement and has an accessible label such as `12 matching results out of 92 total values`.
+Selection count is separate from search-result count. The counter uses tabular numerals to prevent layout movement and has an accessible label such as `12 matching results out of 92 total values`.
 
 ## Test-case actions
 
-Each test case provides two distinct actions:
+The playground provides two test actions without making either action part of the component contract:
 
-- **Copy:** Copies the original sample value, applies the test case’s required match method and case-sensitivity setting, opens the Customer panel, focuses the search field, and leaves the field empty so the user can paste manually.
-- **Try in panel:** Applies the required configuration and loads the normalized sample directly into the focused search field. Empty and whitespace-only pasted rows are removed.
+- **Copy:** Copies the original sample value, applies the test case’s required match method and case-sensitivity setting, focuses the empty search field, and waits for the user to paste manually.
+- **Try search:** Applies the required configuration and loads the normalized sample directly into the search field. Empty and whitespace-only pasted rows are removed.
 
-Copy must never prefill the search field. This keeps clipboard testing realistic and ensures the user can verify paste parsing, blank-row cleanup, and multiline behavior.
+Copy must never prefill the field. This keeps clipboard testing realistic and allows paste parsing, blank-row cleanup, and multiline behavior to be verified.
 
 ## Core definitions
 
@@ -194,7 +181,7 @@ This avoids a hidden mode change, makes typed and pasted searches behave the sam
 
 ## Playground configuration
 
-The developer-facing configurator is intentionally outside the end-user panel:
+The playground exposes these developer-facing search configurations:
 
 - Multi-value input: On or Off
 - Multi-value mode: Compact or Non-compact
@@ -210,7 +197,7 @@ The developer-facing configurator is intentionally outside the end-user panel:
 When the dataset mode is **Remote**, the results area displays a skeleton loader
 while the debounced request is in progress:
 
-- The search input, entered value, panel header, and footer remain stable.
+- The search input, entered value, surrounding layout, and result-region dimensions remain stable.
 - Skeleton rows replace only the bottom result-list content.
 - The inline matching/total counter stays hidden while loading.
 - Previous remote responses cannot replace a newer query result.
@@ -222,14 +209,9 @@ Local mode does not use the results skeleton during normal synchronous search.
 
 ### Session persistence
 
-When **Search persists** is On, closing and reopening the member panel restores
-the last query, selected match method, and corresponding results, provided the
-user did not clear the query. The setting applies only to the current page
-session and does not write the query to durable storage.
+When **Search persists** is On, the search experience restores the last uncleared query, selected match method, and corresponding results when it is reopened during the current page session. Persistence belongs to the search state and does not depend on whether search is rendered in a panel, window, popup, popover, or page layout.
 
-When Search persists is Off, closing the panel clears the query and reopening
-starts with an empty search field. The Clear action always removes the current
-query immediately, regardless of the persistence setting.
+When Search persists is Off, reopening the search experience starts with an empty query. **Clear** always removes the remembered query immediately. This setting does not write query content to durable storage or carry it into a new browser session.
 
 ## Multi-value behaviour
 
@@ -245,11 +227,11 @@ query immediately, regardless of the persistence setting.
 ## Accessibility
 
 - The tune control is labelled dynamically, such as `Match method: All matches`.
-- Clear and close controls have explicit accessible names.
+- Clear and match-method controls have explicit accessible names.
 - Results use listbox/option semantics with `aria-selected`.
 - Match highlighting does not fragment the spoken result value.
 - Focus indicators do not rely on color alone.
-- The modeless panel uses a labelled complementary landmark and does not trap focus, allowing a logical focus path between the panel and the playground.
+- The host container owns its own focus-management and dismissal rules; the search component must not impose modal or container-specific behavior.
 - Reduced-motion preferences are respected.
 
 ## Run locally
