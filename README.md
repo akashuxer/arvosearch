@@ -95,10 +95,28 @@ ordinary enterprise values containing `*` or `?` searchable as literal text.
 
 - `*` matches zero or more characters.
 - `?` matches exactly one character.
-- The trigger applies independently to each entry in a multi-value search.
+- Wildcard search supports **one value only**. It cannot be combined with multi-value bagging.
 - Wildcard shortcuts are supported only with **All matches**.
 - A standalone `:` is incomplete and should prompt the user to add `*` or `?`.
 - The `:` is a command trigger and is not included in matching or highlighting.
+
+### Wildcard and multi-value limitation
+
+Wildcard syntax is intentionally single-value-only. Once `:` activates a pattern containing `*` or `?`, commas, Enter, Shift+Enter, and pasted line breaks cannot add another value.
+
+| Attempt | Behaviour |
+|---|---|
+| `:*Customer-A01*, :*Customer-A02*` | The comma and second wildcard pattern are rejected. |
+| `:*Customer-A01*, Customer-A02` | The plain second value is rejected; wildcard and bagged values cannot be mixed. |
+| `:*Customer-A01*` followed by Enter | No new row is created. |
+| `:*Customer-A01*` followed by Shift+Enter | No new row is created. |
+| Paste multiple lines beginning with a wildcard pattern | The multi-value paste is rejected. |
+
+Show this inline guidance:
+
+> Wildcard search supports one value at a time. Remove the comma or line break, then search one wildcard pattern.
+
+This avoids implying that wildcard expressions can be bagged or combined with OR logic. To search multiple known values, remove wildcard syntax and use a supported multi-value match method such as **Contains**, **Starts with**, or **Exact matches**.
 
 Arvo’s **Exact matches** menu option means **exact value**, not merely exact phrase or exact token.
 
