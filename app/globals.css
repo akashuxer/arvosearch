@@ -39,6 +39,11 @@ svg { width: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-l
 .icon-button:hover, .icon-button:focus-visible { background: #e5e5e7; outline: 2px solid var(--ink); outline-offset: 1px; }
 .icon-button svg { width: 32px; }
 .method-dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; position: absolute; top: 11px; right: 13px; }
+.search-resources { margin-top: 18px; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 9px; color: #aaaab0; font-size: 12px; }
+.search-resources a { color: #53535a; font-weight: 700; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.search-resources a:hover { color: var(--accent); }
+.search-resources a:focus-visible { color: var(--accent); outline: 2px solid var(--accent); outline-offset: 4px; }
+.search-resources a span { display: inline-block; margin-left: 2px; font-size: 11px; }
 .stage-note { color: #77777d; font-size: 12px; margin-top: 18px; }
 
 .rules { max-width: 1150px; margin: 24px auto 0; padding: 28px 0 60px; border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(3, 1fr); }
